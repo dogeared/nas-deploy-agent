@@ -174,10 +174,92 @@ Responses:
 | `409` | Another deploy is in progress |
 | `500` | Compose failed or timed out. Body has `"ok": false` and recent output |
 
-## GitHub Actions
+## Publishing an image to GHCR
+
+The agent never builds anything. It only runs `docker compose pull` on the host,
+so the image referenced by each project's `compose.yaml` must already exist in a
+registry the host can reach. GitHub Container Registry (GHCR) is the natural
+choice here: Actions pushes with the built-in `GITHUB_TOKEN`, and a public
+package pulls anonymously, so the host needs no registry credentials.
+
+Requirements for the published image:
+
+- Build `linux/amd64` (or whatever your host runs). An ARM-only image fails at
+  `pull` or `up` time.
+- Push a movable `:latest`, which is what `compose.yaml` should follow, plus an
+  immutable `:sha-<short>` for rollback.
+- Grant the job `packages: write`. `GITHUB_TOKEN` is enough; no PAT is needed.
+- Make the package **public** if the host should pull without credentials:
+  repo → *Packages* → the package → *Package settings* → *Change visibility*.
+  Otherwise log the host in to `ghcr.io` first.
+
+A complete publish workflow:
+
+```yaml
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+```
+
+Then point the project at it:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/your-org/my-app:latest
+```
+
+Add a version tag to the metadata action if you cut releases
+(`type=raw,value=${{ steps.version.outputs.value }}` or `type=semver,pattern={{version}}`).
+Image names must be lowercase.
+
+If the same workflow runs tests, gate publishing on them (`needs: test`) so a
+broken build never replaces `:latest`.
+
+## Triggering the deploy from GitHub Actions
 
 After the image is published, call the agent from the app repo. Keep the
-secrets in the repo, not in the workflow:
+secrets in the repo, not in the workflow. This job must run after the publish
+job above (`needs: publish`):
 
 ```yaml
   deploy:
