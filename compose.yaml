@@ -1,0 +1,38 @@
+# nas-deploy-agent — see README.md.
+#
+# On a Synology, create a Container Manager project from this directory using
+# "Use existing docker-compose.yml". Elsewhere: `docker compose up -d --build`.
+#
+# Copy .env.example to .env first; both required variables come from it.
+name: nas-deploy-agent
+
+services:
+  agent:
+    container_name: nas-deploy-agent
+    build: .
+    restart: unless-stopped
+    environment:
+      PROJECTS_FILE: ${PROJECTS_FILE:?set PROJECTS_FILE in .env}
+      DEPLOY_WEBHOOK_SECRET: ${DEPLOY_WEBHOOK_SECRET:?set DEPLOY_WEBHOOK_SECRET in .env}
+    volumes:
+      # The whole point of the agent: it drives this host's Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount the Docker root at the same path inside the container so the
+      # PROJECTS_FILE path and each projects.json "dir" resolve identically.
+      - ${DOCKER_ROOT:-/volume1/docker}:${DOCKER_ROOT:-/volume1/docker}
+    networks:
+      - deploy
+    ports:
+      # Loopback only, for smoke tests from the host. Public traffic should come
+      # through a tunnel or reverse proxy; never expose this to the LAN/WAN.
+      - "127.0.0.1:19000:9000"
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  # Existing external network shared with the tunnel connector, so the tunnel
+  # can reach this container by name (e.g. http://nas-deploy-agent:9000).
+  deploy:
+    external: true
+    name: ${DEPLOY_NETWORK:-nas-shared}

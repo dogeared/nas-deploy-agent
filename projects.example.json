@@ -1,0 +1,11 @@
+{
+  "my-app": {
+    "dir": "/volume1/docker/my-app",
+    "services": ["app"]
+  },
+  "paused-app": {
+    "dir": "/volume1/docker/paused-app",
+    "services": ["app"],
+    "enabled": false
+  }
+}
