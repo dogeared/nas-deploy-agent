@@ -20,6 +20,10 @@ services:
       # Mount the Docker root at the same path inside the container so the
       # PROJECTS_FILE path and each projects.json "dir" resolve identically.
       - ${DOCKER_ROOT:-/volume1/docker}:${DOCKER_ROOT:-/volume1/docker}
+      # Optional registry credentials for private images. Mounting the whole
+      # directory (not config.json itself) means a missing file is just an
+      # anonymous pull; Docker would otherwise create a directory at the path.
+      - ./docker:/root/.docker:ro
     networks:
       - deploy
     ports:

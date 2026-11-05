@@ -255,6 +255,41 @@ Image names must be lowercase.
 If the same workflow runs tests, gate publishing on them (`needs: test`) so a
 broken build never replaces `:latest`.
 
+### Private images (authenticated pulls)
+
+A package attached to a **private** repo is private too, so the host must
+authenticate before `docker compose pull` can fetch it. The agent mounts
+`./docker` from its project directory at `/root/.docker`, which is where the
+Docker CLI looks for `config.json`.
+
+1. Create a token that can read packages: a **classic** PAT with `read:packages`
+   (add `repo` if the package is linked to a private repository). Fine-grained
+   tokens do not currently work for GHCR.
+2. Write the config on the host, then make it owner-only:
+
+   ```sh
+   mkdir -p /volume1/docker/nas-deploy-agent/docker
+   umask 077
+   AUTH=$(printf '%s:%s' dogeared "$GHCR_TOKEN" | base64)
+   printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" \
+     > /volume1/docker/nas-deploy-agent/docker/config.json
+   ```
+
+   `docker login ghcr.io` on another machine writes the same structure; you can
+   copy that file instead.
+3. Recreate the agent so the mount takes effect:
+   `docker compose -p nas-deploy-agent up -d --build`.
+
+Verify without involving the agent:
+
+```sh
+echo "$GHCR_TOKEN" | docker login ghcr.io -u dogeared --password-stdin
+docker pull ghcr.io/your-org/private-app:latest
+```
+
+Rotating the token is just rewriting `config.json`; no agent restart is needed
+because Docker reads the file on each pull.
+
 ## Triggering the deploy from GitHub Actions
 
 After the image is published, call the agent from the app repo. Keep the
