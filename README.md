@@ -347,12 +347,30 @@ Useful flags:
 | `--services a,b` | Services to put in the `projects.json` snippet (default: the compose service that uses the image) |
 | `--branch NAME` | Branch that deploys (default `main`) |
 | `--workflow PATH` | Workflow to edit, e.g. `ci.yml` |
+| `--update-projects` | Add this project to `projects.json` |
+| `--projects-file TARGET` | Local path or `[user@]host:/absolute/path` to update (implies `--update-projects`; defaults to `$PROJECTS_FILE`) |
+| `--project-dir PATH` | Compose directory for the entry (default `/volume1/docker/<project>`) |
+| `--overwrite-project` | Replace an existing entry that has different values |
 | `--dry-run` | Print the result without writing |
 
+To update the allowlist on the NAS over SSH while setting up the repo:
+
+```sh
+cd /path/to/app-repo
+/path/to/nas-deploy-agent/setup_auto_deploy.py \
+  --deploy-url https://deploy.example.com/deploy \
+  --projects-file nas:/volume1/docker/deploy/projects.json
+```
+
+Replace `nas` with your SSH host or `user@host`. A local path also works if
+the NAS share is mounted. The script refuses to overwrite an existing entry
+with different values unless `--overwrite-project` is given.
+
 The script does not put the webhook URL or secret into the workflow. It prints
-the remaining steps: set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET`,
-add the project to `projects.json`, point the host's compose file at the new
-image, and make the GHCR package public (or configure pull credentials).
+the remaining steps: set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET`, add
+the project to `projects.json` if you did not use `--update-projects`, point the
+host's compose file at the new image, and make the GHCR package public (or
+configure pull credentials).
 
 The publish job assumes a Dockerfile at the repository root; adjust
 `context`/`file` in the build step if yours lives elsewhere.
