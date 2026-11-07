@@ -277,10 +277,13 @@ Replace `nas` with your SSH host or `user@host`. Local paths also work if the
 NAS share is mounted. The script refuses to overwrite an existing `projects.json`
 entry with different values unless `--overwrite-project` is given.
 
-With `--create-compose`, a missing project directory is created and a minimal
-`compose.yaml` is written that pulls the image the workflow publishes; add
-ports, environment, and volumes yourself. If a compose file already exists but
-does not reference the image, the script warns instead of editing it.
+With `--create-compose`, a missing project directory is created and a
+`compose.yaml` is written there. If the repo has a `compose.yaml`, the NAS file
+is seeded from it: ports, environment, volumes, and other service settings are
+kept, while `build:` is removed and `image:` is pointed at the published image.
+Without a repo compose file, a minimal one-service file is written. If a NAS
+compose file already exists but does not reference the image, the script warns
+instead of editing it.
 
 The script never prints or embeds the webhook secret in the workflow. It prints
 the remaining steps: the repository secrets, the `projects.json` entry, the

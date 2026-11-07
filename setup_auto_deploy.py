@@ -663,7 +663,83 @@ def find_compose(host, project_dir):
     return None
 
 
-def plan_nas(args, project, services, image):
+def service_block_bounds(lines, service):
+    """Return (start, stop) line indices for a service in a compose file."""
+    services_index = find_top_level_key(lines, "services")
+    if services_index is None:
+        return None
+    end = block_end(lines, services_index)
+    indent = child_indent(lines, services_index, end)
+    pattern = re.compile(r"^" + re.escape(indent) + re.escape(service) + r"\s*:")
+    start = next(
+        (index for index in range(services_index + 1, end) if pattern.match(lines[index])),
+        None,
+    )
+    if start is None:
+        return None
+    service_key = re.compile(
+        r"^" + re.escape(indent) + r"[A-Za-z0-9_.-]+\s*:"
+    )
+    stop = end
+    for index in range(start + 1, end):
+        if service_key.match(lines[index]):
+            stop = index
+            break
+    return start, stop
+
+
+def seed_compose_text(text, service, image):
+    """Turn a repo compose file into a NAS compose file.
+
+    Keep ports, environment, volumes, and similar service settings, but replace
+    the image with the published one and drop build-only configuration.
+    """
+    lines = text.splitlines()
+    bounds = service_block_bounds(lines, service)
+    if bounds is None:
+        return None
+    start, stop = bounds
+    child = child_indent(lines, start, stop)
+    image_line = child + "image: " + json.dumps(image + ":latest")
+    image_re = re.compile(r"^" + re.escape(child) + r"image\s*:")
+    build_re = re.compile(r"^" + re.escape(child) + r"build\s*:")
+
+    block = []
+    found_image = False
+    index = start + 1
+    while index < stop:
+        line = lines[index]
+        if build_re.match(line):
+            index += 1
+            while index < stop:
+                nested = lines[index]
+                if not nested.strip():
+                    index += 1
+                    continue
+                if len(nested) - len(nested.lstrip()) <= len(child):
+                    break
+                index += 1
+            continue
+        if image_re.match(line):
+            block.append(image_line)
+            found_image = True
+            index += 1
+            continue
+        block.append(line)
+        index += 1
+
+    if not found_image:
+        block.insert(0, image_line)
+    restart_re = re.compile(r"^" + re.escape(child) + r"restart\s*:")
+    if not any(restart_re.match(line) for line in block):
+        image_index = next(
+            (i for i, line in enumerate(block) if image_re.match(line)), 0
+        )
+        block.insert(image_index + 1, child + "restart: unless-stopped")
+    return "\n".join(lines[: start + 1] + block + lines[stop:]).rstrip("\n") + "\n"
+
+
+def plan_nas(args, project, services, image, repo_compose=None, repo_services=None):
     """Return (messages, actions) for the NAS-side compose file."""
     if not (args.update_projects or args.nas_host or args.create_compose):
         return [], []
@@ -705,14 +781,29 @@ def plan_nas(args, project, services, image):
         return messages, actions
 
     service = sanitize_service((services or ["app"])[0])
-    text = (
-        COMPOSE_TEMPLATE.replace("__PROJECT__", project)
-        .replace("__SERVICE__", service)
-        .replace("__IMAGE__", image)
-    )
     path = compose_candidates(project_dir)[0]
+    text = None
+    seeded_from = None
+    if repo_compose is not None and repo_services:
+        target = next((s for s in services if s in repo_services), repo_services[0])
+        try:
+            repo_text = repo_compose.read_text(encoding="utf-8")
+            text = seed_compose_text(repo_text, target, image)
+            if text:
+                seeded_from = repo_compose.name
+        except OSError:
+            text = None
+    if text is None:
+        text = (
+            COMPOSE_TEMPLATE.replace("__PROJECT__", project)
+            .replace("__SERVICE__", service)
+            .replace("__IMAGE__", image)
+        )
     actions.append({"host": host, "dir": project_dir, "path": path, "text": text})
-    messages.append(("create", path))
+    if seeded_from:
+        messages.append(("create", "%s (seeded from %s)" % (path, seeded_from)))
+    else:
+        messages.append(("create", path))
     return messages, actions
 
 
@@ -1363,7 +1454,12 @@ def main():
     # Plan NAS compose work.
     try:
         nas_messages, nas_actions = plan_nas(
-            args, args.project, services, args.image
+            args,
+            args.project,
+            services,
+            args.image,
+            repo_compose=compose_path,
+            repo_services=detected_services,
         )
     except (OSError, RuntimeError) as exc:
         print("error: %s" % exc, file=sys.stderr)
