@@ -244,7 +244,7 @@ health check. Press Ctrl-C or Ctrl-D to cancel without writing anything.
 | `--generate-secret` | Generate a new secret; requires `--agent-env` |
 | `--agent-env TARGET` | Agent `.env` to write the secret to: local path or `[user@]host:/absolute/path` |
 | `--check` | Check the agent's `/healthz` endpoint and exit non-zero on failure |
-| `--make-package-public` | Make the GHCR package public with `gh api` (after the first publish) |
+| `--make-package-public` | Make the GHCR package public with `gh api` (only for images safe to publish) |
 | `--dry-run` | Print the result without writing anything |
 
 The secret must be supplied: `--webhook-secret`, `DEPLOY_WEBHOOK_SECRET` in the
@@ -253,6 +253,11 @@ the agent's `.env`. `--generate-secret` requires `--agent-env` so the agent and
 the repository end up with the same value, and `--agent-env` is used to write
 that value where the agent can read it. A secret must be at least 32
 characters.
+
+`--make-package-public` is only for images that are safe to publish. If the
+repository is private, keep the package private and give the agent GHCR pull
+credentials instead (see *Private images* below); the script warns but does not
+require the package to be public.
 
 ### Updating the NAS over SSH
 

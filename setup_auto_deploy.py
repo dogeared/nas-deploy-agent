@@ -832,9 +832,11 @@ def make_package_public(root, slug, image):
         if proc.returncode == 0:
             return True
         errors.append(proc.stderr.strip() or proc.stdout.strip())
+    detail = "; ".join(filter(None, errors)) or "unknown error"
     raise RuntimeError(
-        "could not make the package public (publish the image first, then rerun): "
-        + "; ".join(filter(None, errors))
+        "could not make the package public: %s. If this image should stay "
+        "private, skip --make-package-public and configure GHCR pull "
+        "credentials for the agent instead" % detail
     )
 
 
@@ -972,7 +974,7 @@ def interactive_configure(args, ctx):
         "Check the agent health endpoint?", args.check or bool(args.deploy_url)
     )
     args.make_package_public = ask_yes_no(
-        "Make the GHCR package public after the first publish?",
+        "Make the GHCR package public? (only for images safe to publish)",
         args.make_package_public,
     )
 
@@ -1206,7 +1208,7 @@ def main():
     parser.add_argument(
         "--make-package-public",
         action="store_true",
-        help="make the GHCR package public with gh api (after the first publish)",
+        help="make the GHCR package public with gh api (only for images safe to publish)",
     )
     parser.add_argument(
         "--dry-run",
