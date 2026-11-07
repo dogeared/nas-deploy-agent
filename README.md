@@ -185,49 +185,103 @@ cd /path/to/app-repo
   --deploy-url https://deploy.example.com/deploy
 ```
 
-It adds a `publish` job (GHCR, `:latest` and `:sha-<short>`, `linux/amd64`)
-and a `deploy` job to the repo's workflow. If there is no workflow it creates
-`.github/workflows/deploy.yml`; if there is exactly one workflow file it
-appends to it; if there are several, pass `--workflow ci.yml` to choose.
+It adds a `publish` job (GHCR, `:latest` and `:sha-<short>`, `linux/amd64`) and
+a `deploy` job to the repo's workflow. If there is no workflow it creates
+`.github/workflows/deploy.yml`; if there is one workflow file it appends to it;
+if there are several, pass `--workflow ci.yml` to choose.
 
-Useful flags:
+The deploy job gives each project its own concurrency group so two deploys of
+the same project cannot overlap. If the agent returns `409` ("another deploy is
+running"), the job retries up to `--deploy-retries` times (default 3).
+
+### Interactive setup
+
+Run the script with no arguments, or with `-i`/`--interactive`, to be prompted
+for every value:
+
+```sh
+cd /path/to/app-repo
+/path/to/nas-deploy-agent/setup_auto_deploy.py -i
+```
+
+Any flags you pass alongside `-i` become the defaults for the prompts, so you
+can pre-fill the common values and only answer the rest:
+
+```sh
+/path/to/nas-deploy-agent/setup_auto_deploy.py -i \
+  --project my-app --platform linux/amd64
+```
+
+Interactive mode can also update `projects.json`, set repository secrets, write
+the secret to the agent's `.env`, scaffold the NAS compose file, and run the
+health check. Press Ctrl-C or Ctrl-D to cancel without writing anything.
+
+### Flags
 
 | Flag | Purpose |
 |---|---|
 | `--project NAME` | `projects.json` key / compose project name (default: repo name) |
 | `--image IMAGE` | Override `ghcr.io/<owner>/<repo>` |
-| `--needs JOB` | Make publishing wait for an existing job such as `test` |
-| `--services a,b` | Services to put in the `projects.json` snippet (default: the compose service that uses the image) |
-| `--branch NAME` | Branch that deploys (default `main`) |
+| `--branch NAME` | Branch that deploys (default: the repo's default branch) |
+| `--needs JOB` | Make publishing wait for an existing job such as `test` (auto-detected when exactly one test-like job exists) |
 | `--workflow PATH` | Workflow to edit, e.g. `ci.yml` |
+| `--platform PLATFORM` | Image platform (default `linux/amd64`) |
+| `--context PATH` | Docker build context (default `.`) |
+| `--dockerfile PATH` | Dockerfile path relative to the context (default `Dockerfile`) |
+| `--build-arg KEY=VALUE` | Build argument for the image build (repeatable) |
+| `--build-secret NAME` | Repository secret exposed to the build (repeatable) |
+| `--deploy-retries N` | Attempts when the agent returns `409` (default 3) |
+| `--no-concurrency` | Do not add a concurrency group to the deploy job |
+| `--services a,b` | Services for the `projects.json` snippet (default: the compose service that uses the image) |
 | `--update-projects` | Add this project to `projects.json` |
 | `--projects-file TARGET` | Local path or `[user@]host:/absolute/path` to update (implies `--update-projects`; defaults to `$PROJECTS_FILE`) |
 | `--project-dir PATH` | Compose directory for the entry (default `/volume1/docker/<project>`) |
 | `--overwrite-project` | Replace an existing entry that has different values |
-| `--dry-run` | Print the result without writing |
+| `--nas-host HOST` | SSH host for NAS checks and compose scaffolding (default: derived from `--projects-file`) |
+| `--create-compose` | Create the project directory and a minimal `compose.yaml` if missing |
+| `--set-secrets` | Set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET` with `gh` |
+| `--webhook-secret VALUE` | Secret for `--set-secrets` (or set `DEPLOY_WEBHOOK_SECRET`) |
+| `--generate-secret` | Generate a new secret; requires `--agent-env` |
+| `--agent-env TARGET` | Agent `.env` to read/update: local path or `[user@]host:/absolute/path` |
+| `--check` | Check the agent's `/healthz` endpoint and exit non-zero on failure |
+| `--make-package-public` | Make the GHCR package public with `gh api` (after the first publish) |
+| `--dry-run` | Print the result without writing anything |
 
-To update the allowlist on the NAS over SSH while setting up the repo:
+Secrets are resolved in this order: `--webhook-secret`, `--generate-secret`,
+`DEPLOY_WEBHOOK_SECRET`, then `DEPLOY_WEBHOOK_SECRET` from `--agent-env`.
+`--generate-secret` requires `--agent-env` so the agent and the repository end
+up with the same value. A secret must be at least 32 characters.
+
+### Updating the NAS over SSH
+
+To update the allowlist and scaffold the compose file on the NAS while setting
+up the repo:
 
 ```sh
 cd /path/to/app-repo
 /path/to/nas-deploy-agent/setup_auto_deploy.py \
   --deploy-url https://deploy.example.com/deploy \
-  --projects-file nas:/volume1/docker/deploy/projects.json
+  --projects-file nas:/volume1/docker/deploy/projects.json \
+  --agent-env nas:/volume1/docker/deploy/.env \
+  --set-secrets --create-compose
 ```
 
-Replace `nas` with your SSH host or `user@host`. A local path also works if
-the NAS share is mounted. The script refuses to overwrite an existing entry
-with different values unless `--overwrite-project` is given.
+Replace `nas` with your SSH host or `user@host`. Local paths also work if the
+NAS share is mounted. The script refuses to overwrite an existing `projects.json`
+entry with different values unless `--overwrite-project` is given.
 
-The script does not put the webhook URL or secret into the workflow. It prints
-the remaining steps: set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET`, add
-the project to `projects.json` if you did not use `--update-projects`, point the
-host's compose file at the new image, and make the GHCR package public (or
-configure pull credentials).
+With `--create-compose`, a missing project directory is created and a minimal
+`compose.yaml` is written that pulls the image the workflow publishes; add
+ports, environment, and volumes yourself. If a compose file already exists but
+does not reference the image, the script warns instead of editing it.
 
-The publish job assumes a Dockerfile at the repository root; adjust
-`context`/`file` in the build step if yours lives elsewhere. The manual
-publish and deploy jobs are described in the next two sections.
+The script never prints or embeds the webhook secret in the workflow. It prints
+the remaining steps: the repository secrets, the `projects.json` entry, the
+image the host's compose file should pull, and how to make the package public.
+
+The publish job assumes a Dockerfile at the repository root; use
+`--context`/`--dockerfile` if yours lives elsewhere. The manual publish and
+deploy jobs are described in the next two sections.
 
 ## Publishing an image to GHCR
 
