@@ -950,10 +950,15 @@ def interactive_configure(args, ctx):
             print("  using NAS SSH host %r from the projects.json path" % derived_host)
         if not args.nas_host:
             args.nas_host = ask("NAS SSH host (blank to skip remote checks)", None)
-        args.create_compose = ask_yes_no(
-            "Create dir/compose.yaml if missing?",
-            args.create_compose or bool(args.nas_host),
-        )
+        existing_compose = find_compose(args.nas_host, args.project_dir)
+        if existing_compose:
+            print("  found %s" % existing_compose)
+            args.create_compose = False
+        elif not args.create_compose:
+            args.create_compose = ask_yes_no(
+                "Create dir/compose.yaml if missing?",
+                bool(args.nas_host),
+            )
     else:
         args.update_projects = False
 
