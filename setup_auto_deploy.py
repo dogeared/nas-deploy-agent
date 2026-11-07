@@ -945,10 +945,11 @@ def interactive_configure(args, ctx):
             args.project_dir or "/volume1/docker/" + args.project,
         )
         derived_host = host_from_target(args.projects_file)
-        args.nas_host = ask(
-            "NAS SSH host (blank to skip remote checks)",
-            args.nas_host or derived_host or None,
-        )
+        if not args.nas_host and derived_host:
+            args.nas_host = derived_host
+            print("  using NAS SSH host %r from the projects.json path" % derived_host)
+        if not args.nas_host:
+            args.nas_host = ask("NAS SSH host (blank to skip remote checks)", None)
         args.create_compose = ask_yes_no(
             "Create dir/compose.yaml if missing?",
             args.create_compose or bool(args.nas_host),
