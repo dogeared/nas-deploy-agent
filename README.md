@@ -321,6 +321,42 @@ job above (`needs: publish`):
 
 If the webhook is not configured yet, guard the step: `if [ -z "$DEPLOY_WEBHOOK_URL" ]; then echo "not configured"; exit 0; fi`.
 
+### Setting up an app repo automatically
+
+Rather than copying the YAML above by hand, run `setup_auto_deploy.py` from
+the root of the app repository:
+
+```sh
+cd /path/to/app-repo
+/path/to/nas-deploy-agent/setup_auto_deploy.py \
+  --deploy-url https://deploy.example.com/deploy
+```
+
+It adds a `publish` job (GHCR, `:latest` and `:sha-<short>`, `linux/amd64`)
+and a `deploy` job to the repo's workflow. If there is no workflow it creates
+`.github/workflows/deploy.yml`; if there is exactly one workflow file it
+appends to it; if there are several, pass `--workflow ci.yml` to choose.
+
+Useful flags:
+
+| Flag | Purpose |
+|---|---|
+| `--project NAME` | `projects.json` key / compose project name (default: repo name) |
+| `--image IMAGE` | Override `ghcr.io/<owner>/<repo>` |
+| `--needs JOB` | Make publishing wait for an existing job such as `test` |
+| `--services a,b` | Services to put in the `projects.json` snippet (default: the compose service that uses the image) |
+| `--branch NAME` | Branch that deploys (default `main`) |
+| `--workflow PATH` | Workflow to edit, e.g. `ci.yml` |
+| `--dry-run` | Print the result without writing |
+
+The script does not put the webhook URL or secret into the workflow. It prints
+the remaining steps: set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET`,
+add the project to `projects.json`, point the host's compose file at the new
+image, and make the GHCR package public (or configure pull credentials).
+
+The publish job assumes a Dockerfile at the repository root; adjust
+`context`/`file` in the build step if yours lives elsewhere.
+
 ## Running without Docker
 
 The agent uses only the standard library (Python 3.8+). It shells out to
