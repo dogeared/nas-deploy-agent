@@ -931,7 +931,8 @@ def interactive_configure(args, ctx):
     if ask_yes_no("Update/verify the NAS project now?", update_default):
         default_target = args.projects_file or os.environ.get("PROJECTS_FILE", "")
         target = ask(
-            "projects.json (local path or host:/path)", default_target or None
+            "projects.json (local path or host:/path to use ssh)",
+            default_target or None,
         )
         if target:
             args.update_projects = True
