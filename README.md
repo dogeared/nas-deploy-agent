@@ -242,15 +242,17 @@ health check. Press Ctrl-C or Ctrl-D to cancel without writing anything.
 | `--set-secrets` | Set `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET` with `gh` |
 | `--webhook-secret VALUE` | Secret for `--set-secrets` (or set `DEPLOY_WEBHOOK_SECRET`) |
 | `--generate-secret` | Generate a new secret; requires `--agent-env` |
-| `--agent-env TARGET` | Agent `.env` to read/update: local path or `[user@]host:/absolute/path` |
+| `--agent-env TARGET` | Agent `.env` to write the secret to: local path or `[user@]host:/absolute/path` |
 | `--check` | Check the agent's `/healthz` endpoint and exit non-zero on failure |
 | `--make-package-public` | Make the GHCR package public with `gh api` (after the first publish) |
 | `--dry-run` | Print the result without writing anything |
 
-Secrets are resolved in this order: `--webhook-secret`, `--generate-secret`,
-`DEPLOY_WEBHOOK_SECRET`, then `DEPLOY_WEBHOOK_SECRET` from `--agent-env`.
-`--generate-secret` requires `--agent-env` so the agent and the repository end
-up with the same value. A secret must be at least 32 characters.
+The secret must be supplied: `--webhook-secret`, `DEPLOY_WEBHOOK_SECRET` in the
+environment, or `--generate-secret`. The script no longer reads the secret from
+the agent's `.env`. `--generate-secret` requires `--agent-env` so the agent and
+the repository end up with the same value, and `--agent-env` is used to write
+that value where the agent can read it. A secret must be at least 32
+characters.
 
 ### Updating the NAS over SSH
 

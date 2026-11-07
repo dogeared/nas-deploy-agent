@@ -515,17 +515,6 @@ def plan_projects_update(target, project, entry, overwrite):
     return dump_projects(data), "updated"
 
 
-ENV_LINE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$")
-
-
-def get_env_value(text, key):
-    for line in text.splitlines():
-        match = ENV_LINE.match(line.strip())
-        if match and match.group("key") == key:
-            return match.group("value")
-    return None
-
-
 def set_env_value(text, key, value):
     pattern = re.compile(r"^" + re.escape(key) + r"=.*$", re.MULTILINE)
     if pattern.search(text):
@@ -745,8 +734,8 @@ def gh_run(root, *args):
 def resolve_webhook_secret(args):
     """Return the webhook secret to use, or None.
 
-    Order: --webhook-secret, --generate-secret, DEPLOY_WEBHOOK_SECRET, then the
-    agent's .env.
+    Order: --webhook-secret, --generate-secret, then DEPLOY_WEBHOOK_SECRET.
+    The secret is never read from the agent's .env; it must be supplied.
     """
     if args.webhook_secret:
         return args.webhook_secret
@@ -759,15 +748,6 @@ def resolve_webhook_secret(args):
     env = os.environ.get("DEPLOY_WEBHOOK_SECRET", "")
     if env:
         return env
-    if args.agent_env:
-        host, path = split_remote_target(args.agent_env)
-        try:
-            text = target_read(host, path)
-        except (OSError, RuntimeError):
-            text = ""
-        found = get_env_value(text, "DEPLOY_WEBHOOK_SECRET")
-        if found:
-            return found
     return None
 
 
@@ -885,7 +865,7 @@ def ask_yes_no(prompt, default=True):
 
 def ask_secret(prompt):
     try:
-        return getpass.getpass(prompt + " (leave blank to use env/agent .env): ")
+        return getpass.getpass(prompt + ": ")
     except (EOFError, KeyboardInterrupt):
         raise SystemExit("\ninteractive setup cancelled")
 
@@ -974,32 +954,16 @@ def interactive_configure(args, ctx):
             print("  no webhook URL; skipping secrets")
             args.set_secrets = False
         else:
-            if not args.webhook_secret:
-                entered = ask_secret("Webhook secret")
+            while not (
+                args.webhook_secret or os.environ.get("DEPLOY_WEBHOOK_SECRET")
+            ):
+                entered = ask_secret("Webhook secret (required)")
                 if entered:
                     args.webhook_secret = entered
             args.agent_env = ask(
-                "Agent .env path (blank to skip)",
+                "Agent .env path to write the secret (blank to skip)",
                 args.agent_env or None,
             )
-            has_secret = bool(
-                args.webhook_secret or os.environ.get("DEPLOY_WEBHOOK_SECRET")
-            )
-            if not has_secret and not args.agent_env:
-                args.generate_secret = ask_yes_no(
-                    "Generate a new secret? (requires an agent .env path)", False
-                )
-            if args.generate_secret and not args.agent_env:
-                print("  cannot generate without an agent .env path; skipping secrets")
-                args.set_secrets = False
-            if not (
-                args.webhook_secret
-                or os.environ.get("DEPLOY_WEBHOOK_SECRET")
-                or args.agent_env
-                or args.generate_secret
-            ):
-                print("  no webhook secret available; skipping secrets")
-                args.set_secrets = False
     else:
         args.set_secrets = False
 
@@ -1232,7 +1196,7 @@ def main():
     parser.add_argument(
         "--agent-env",
         metavar="TARGET",
-        help="agent .env to read or update: a local path or [user@]host:/absolute/path",
+        help="agent .env to write the secret to: a local path or [user@]host:/absolute/path",
     )
     parser.add_argument(
         "--check",
@@ -1415,8 +1379,7 @@ def main():
         if args.set_secrets and not webhook_secret:
             print(
                 "error: no webhook secret; pass --webhook-secret, set "
-                "DEPLOY_WEBHOOK_SECRET, read it from --agent-env, or use "
-                "--generate-secret",
+                "DEPLOY_WEBHOOK_SECRET, or use --generate-secret",
                 file=sys.stderr,
             )
             return 1
