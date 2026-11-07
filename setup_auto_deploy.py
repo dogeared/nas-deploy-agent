@@ -917,7 +917,8 @@ def interactive_configure(args, ctx):
         if candidates:
             default_needs = args.needs or (candidates[0] if len(candidates) == 1 else "")
             answer = ask(
-                "Gate publish on job (blank for none)", default_needs or ""
+                "Which job to wait for before publish (blank for none)",
+                default_needs or "",
             )
             args.needs = answer or None
 
