@@ -1064,6 +1064,16 @@ def interactive_configure(args, ctx):
     args.check = ask_yes_no(
         "Check the agent health endpoint?", args.check or bool(args.deploy_url)
     )
+    if args.check and not args.deploy_url:
+        url = ask(
+            "Webhook URL for the health check",
+            os.environ.get("DEPLOY_WEBHOOK_URL") or None,
+        )
+        if url:
+            args.deploy_url = url
+        else:
+            print("  no webhook URL; skipping the health check")
+            args.check = False
     args.make_package_public = ask_yes_no(
         "Make the GHCR package public? (only for images safe to publish)",
         args.make_package_public,
